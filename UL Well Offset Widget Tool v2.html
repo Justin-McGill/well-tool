@@ -51,12 +51,16 @@
   <script>
     // --- LAYOUT CONFIGURATION: INPUT YOUR ARCGIS REST ENDPOINTS HERE ---
     const sourceLayersConfig = [
-      { title: "Leases & Units", url: "https://arcgis.com" }
+      { title: "Lease", url: "https://ulmegis.utsystem.edu/server/rest/services/Hosted/OG_Lease/FeatureServer" }
+    ];
+      { title: "Mineral Contract", url: "https://ulmegis.utsystem.edu/server/rest/services/Hosted/MN_UnitAgreement/FeatureServer" }
+    ];
+      { title: "Well", url: "https://ulmegis.utsystem.edu/server/rest/services/Hosted/WellCompletion/FeatureServer" }
     ];
 
     const wellLayersConfig = [
-      { title: "Active Wells", url: "https://arcgis.com" },
-      { title: "Permits", url: "https://arcgis.com" }
+      { title: "UL Wells", url: "https://ulmegis.utsystem.edu/server/rest/services/Hosted/WellCompletion/FeatureServer" },
+      { title: "MDM Wells", url: "https://ulmegis.utsystem.edu/server/rest/services/WellCompletion_MDM/FeatureServer" }
     ];
     // ------------------------------------------------------------------
 
