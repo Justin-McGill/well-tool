@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Experience Builder Integrated Well Offset Tool</title>
+  <!-- Load critical mapping utilities and excel exporter libraries securely -->
+  <script src="https://cloudflare.com"></script>
+  <style>
+    html, body { padding: 0; margin: 0; height: 100%; width: 100%; font-family: sans-serif; background-color: transparent; }
+    #widgetContainer { padding: 15px; box-sizing: border-box; display: flex; flex-direction: column; background: #ffffff; border-radius: 8px; }
+    label { font-weight: bold; margin-top: 12px; display: block; font-size: 13px; color: #323232; }
+    select, input, button { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #abc; border-radius: 4px; font-size: 13px; }
+    button { background: #0079c1; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 15px; }
+    button:hover { background: #005e95; }
+    #searchFilter { margin-bottom: 5px; background-color: #fff; }
+    #checkboxContainer { max-height: 140px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 6px; background: #f9f9f9; }
+    .checkbox-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 12px; }
+    .checkbox-item input { width: auto; margin: 0 6px 0 0; cursor: pointer; }
+    .checkbox-item label { font-weight: normal; margin: 0; cursor: pointer; }
+    #resultsPanel { margin-top: 15px; border-top: 1px solid #ddd; padding-top: 10px; display: none; }
+    .action-btn { background: #28a745; margin-top: 8px; }
+    .action-btn:hover { background: #218838; }
+    .secondary-btn { background: #6c757d; }
+    .secondary-btn:hover { background: #5a6268; }
+  </style>
+</head>
+<body>
+  <div id="widgetContainer">
+    <label for="layerSelect">1. Target Layer to Buffer</label>
+    <select id="layerSelect">
+      <option value="">-- Select a Layer --</option>
+    </select>
+
+    <label>2. Select Feature(s)</label>
+    <input type="text" id="searchFilter" placeholder="Type to search/filter features..." disabled />
+    <div id="checkboxContainer">
+      <div style="color: #888; font-size: 12px; text-align: center; padding-top: 5px;">Select a layer first...</div>
+    </div>
+
+    <label for="bufferDistance">3. Buffer Distance (US Feet)</label>
+    <input type="number" id="bufferDistance" placeholder="Enter distance (e.g. 1320)" min="1" />
+    <button id="runBtn">Run Analysis</button>
+
+    <div id="resultsPanel">
+      <strong style="color:#28a745; font-size:14px;">Analysis Complete</strong>
+      <div id="statusText" style="font-size:13px; margin: 5px 0;">Found 0 wells.</div>
+      <button id="exportExcel" class="action-btn">Export Table to Excel</button>
+      <button id="exportPdf" class="secondary-btn">Request Map Print (PDF)</button>
+    </div>
+  </div>
+  <script>
+    // --- LAYOUT CONFIGURATION: INPUT YOUR ARCGIS REST ENDPOINTS HERE ---
+    const sourceLayersConfig = [
+      { title: "Leases & Units", url: "https://arcgis.com" }
+    ];
+
+    const wellLayersConfig = [
+      { title: "Active Wells", url: "https://arcgis.com" },
+      { title: "Permits", url: "https://arcgis.com" }
+    ];
+    // ------------------------------------------------------------------
+
+    let calculatedWellsData = [];
+
+    // Populate Initial Dropdown list options
+    sourceLayersConfig.forEach(cfg => {
+      let opt = document.createElement("option");
+      opt.value = cfg.title;
+      opt.textContent = cfg.title;
+      document.getElementById("layerSelect").appendChild(opt);
+    });
+
+    // Query features dynamically using ESRI Web APIs directly without full map engine load
+    document.getElementById("layerSelect").addEventListener("change", async (e) => {
+      const container = document.getElementById("checkboxContainer");
+      const searchInput = document.getElementById("searchFilter");
+      container.innerHTML = "";
+      searchInput.value = "";
+      
+      const selectedCfg = sourceLayersConfig.find(l => l.title === e.target.value);
+      if (!selectedCfg) {
+        container.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding-top: 5px;">Select a layer first...</div>';
+        searchInput.disabled = true;
+        return;
+      }
+
+      searchInput.disabled = false;
+      container.innerHTML = '<div style="color: #555; font-size: 12px; text-align: center;">Loading records...</div>';
+
+      try {
+        const queryUrl = `${selectedCfg.url}/query?where=1%3D1&outFields=OBJECTID,NAME&returnGeometry=false&f=pjson`;
+        const response = await fetch(queryUrl);
+        const data = await response.json();
+        
+        container.innerHTML = "";
+        if (!data.features || data.features.length === 0) {
+          container.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center;">No features found.</div>';
+          return;
+        }
+
+        data.features.forEach(f => {
+          const oid = f.attributes.OBJECTID;
+          const displayName = f.attributes.NAME || `ID: ${oid}`;
+          let wrapper = document.createElement("div");
+          wrapper.className = "checkbox-item";
+          wrapper.setAttribute("data-name", displayName.toLowerCase());
+
+          let checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = oid;
+          checkbox.id = "chk_" + oid;
+          checkbox.className = "record-checkbox";
+
+          let label = document.createElement("label");
+          label.setAttribute("for", "chk_" + oid);
+          label.textContent = displayName;
+
+          wrapper.appendChild(checkbox);
+          wrapper.appendChild(label);
+          container.appendChild(wrapper);
+        });
+      } catch (err) {
+        container.innerHTML = '<div style="color: red; font-size: 12px;">Error connecting to database layer.</div>';
+      }
+    });
+
+    // Live search textbox listener
+    document.getElementById("searchFilter").addEventListener("input", (e) => {
+      const searchText = e.target.value.toLowerCase();
+      document.querySelectorAll(".checkbox-item").forEach(item => {
+        const name = item.getAttribute("data-name");
+        item.style.display = name.includes(searchText) ? "flex" : "none";
+      });
+    });
+
+    // Handle analytical workflows and pass outputs directly to parent Map view container frame
+    document.getElementById("runBtn").addEventListener("click", async () => {
+      const layerTitle = document.getElementById("layerSelect").value;
+      const distanceStr = document.getElementById("bufferDistance").value;
+      const checkedBoxes = document.querySelectorAll(".record-checkbox:checked");
+      const selectedIds = Array.from(checkedBoxes).map(cb => window.encodeURIComponent(cb.value));
+
+      if (!layerTitle || selectedIds.length === 0 || !distanceStr) {
+        alert("Error: All fields are required.");
+        return;
+      }
+
+      // Tell user math processes are calculating
+      document.getElementById("runBtn").textContent = "Calculating Spatially...";
+      document.getElementById("runBtn").disabled = true;
+
+      // Communicate directly out of iframe window up into parent framework environment
+      // This sends a structural command instruction payload notifying the global app layout matrix
+      window.parent.postMessage({
+        type: "WELL_OFFSET_RUN_ANALYSIS",
+        layerTitle: layerTitle,
+        selectedIds: selectedIds,
+        distance: parseFloat(distanceStr),
+        wellLayers: wellLayersConfig,
+        sourceLayers: sourceLayersConfig
+      }, "*");
+    });
+
+    // Capture response data sent back from Experience Builder frame map listeners 
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "WELL_OFFSET_RESULTS_RETURNED") {
+        calculatedWellsData = event.data.records || [];
+        document.getElementById("statusText").textContent = `Found ${calculatedWellsData.length} offset records outside the boundary.`;
+        document.getElementById("resultsPanel").style.display = "block";
+        
+        document.getElementById("runBtn").textContent = "Run Analysis";
+        document.getElementById("runBtn").disabled = false;
+      }
+    });
+
+    // Export local records matrix structure instantly out to standard Excel spreadsheet
+    document.getElementById("exportExcel").addEventListener("click", () => {
+      if (calculatedWellsData.length === 0) return;
+      const worksheet = XLSX.utils.json_to_sheet(calculatedWellsData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Well_Offsets");
+      XLSX.writeFile(workbook, "Calculated_Offsets_Output.xlsx");
+    });
+
+    // Send print request event up to parent portal frame container handler actions
+    document.getElementById("exportPdf").addEventListener("click", () => {
+      window.parent.postMessage({ type: "TRIGGER_EXPERIENCE_BUILDER_PRINT" }, "*");
+    });
+  </script>
+</body>
+</html>
